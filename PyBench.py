@@ -46,7 +46,7 @@ CHECK_EVERY: int = 100  # stop 이벤트 확인 주기(반복 횟수)
 # 벤치마크 계산 함수
 # ----------------------------------------------------------------------
 def exp_inverse_sum(start: int, end: int) -> float:
-    """start ≤ i < end 범위에서 Σ e^(−i) 반환"""
+    """start ≤ i < end 범위에서 Σ e^(-i) 반환"""
     return sum(math.exp(-i) for i in range(start, end))
 
 
@@ -201,9 +201,9 @@ class BenchmarkGUI(tk.Tk):
         # 버튼 ---------------------------------------------------
         btn_frame = ttk.Frame(root)
         btn_frame.pack()
-        self.single_btn = ttk.Button(btn_frame, text="Single‑core",
+        self.single_btn = ttk.Button(btn_frame, text="Single-core",
                                      command=self.start_single)
-        self.multi_btn = ttk.Button(btn_frame, text="Multi‑core",
+        self.multi_btn = ttk.Button(btn_frame, text="Multi-core",
                                     command=self.start_multi)
         self.stop_btn = ttk.Button(btn_frame, text="Stop",
                                    command=self.stop_benchmark,
@@ -235,7 +235,7 @@ class BenchmarkGUI(tk.Tk):
                   font=result_font).pack(anchor="w")
 
         # 제작자 푸터 -------------------------------------------
-        ttk.Label(self, text="Created by chili‑tuna",
+        ttk.Label(self, text="Created by chili-tuna",
                   font=("Segoe UI", 9)
                   ).place(relx=1.0, rely=1.0, anchor="se", x=-6, y=-6)
 
