@@ -253,7 +253,7 @@ class BenchmarkGUI(tk.Tk):
         res_f.columnconfigure(2, weight=1)
 
         # ── 푸터 ------------------------------------------------
-        ttk.Label(self, text=f"PyBench v{__version__}  |  Created by chili‑tuna", font=("Arial", 9)).pack(side="bottom", anchor="e", padx=10, pady=10)
+        ttk.Label(self, text=f"PyBench v{__version__}  |  Created by chili-tuna", font=("Arial", 9)).pack(side="bottom", anchor="e", padx=10, pady=10)
 
         # 내부 상태
         self._worker_thread: threading.Thread | None = None
