@@ -1,60 +1,98 @@
-import time
+"""
+PyBench.py
+------------------------------------------------------------
+10 초 exp_inverse_sum CPU 벤치마크
+- 싱글 / 멀티 코어 선택
+- 진행률 바 + 상태 텍스트
+- 최근 싱글 / 멀티 점수(반복 수·초당 반복)
+- Stop 버튼으로 중단 가능
+- WMI → 레지스트리 → platform 순으로 CPU 이름·코어·스레드 표시
+- WMI 로 RAM 슬롯별 BankLabel / PartNumber / 용량 / 설정 클럭 표시
+- 우측 하단 “Created by” 푸터
+PyInstaller 패키징 예시
+    pyinstaller --onefile --noconsole PyBench.py
+(Windows / Python 3.10.11 기준)
+"""
+
+# ----------------------------------------------------------------------
+# import
+# ----------------------------------------------------------------------
+from __future__ import annotations
+
 import math
-import threading
 import multiprocessing as mp
+import os
+import platform
+import sys
+import threading
+import time
 from concurrent.futures import ProcessPoolExecutor
 import tkinter as tk
 from tkinter import ttk
 
-# -------- 설정 --------
-DURATION = 10.0         # 벤치마크 실행 시간 (초)
-BATCH    = 50_000       # 한 번에 계산할 원소 수
-CHECK_EVERY = 100       # stop 이벤트 주기적 확인
+# WMI (Windows 전용) ----------------------------------------------------
+try:
+    import wmi
+except ImportError:
+    wmi = None
 
-# -------- 계산 함수 --------
-def exp_inverse_sum(start, end):
+# ----------------------------------------------------------------------
+# 설정 상수
+# ----------------------------------------------------------------------
+DURATION_SEC: float = 10.0        # 벤치마크 실행 시간
+BATCH_SIZE: int = 100_000         # exp_inverse_sum 한 번에 계산할 개수
+CHECK_EVERY: int = 100            # stop 이벤트 확인 주기
+
+# ----------------------------------------------------------------------
+# 벤치마크 계산 함수
+# ----------------------------------------------------------------------
+def exp_inverse_sum(start: int, end: int) -> float:
+    """start ≤ i < end 범위에서 Σ e^(-i)"""
     return sum(math.exp(-i) for i in range(start, end))
 
-# -------- 실행 래퍼 --------
-_STOP_EVT = None                      # 각 프로세스에서 공유할 전역 변수
+# ----------------------------------------------------------------------
+# 멀티 프로세스 워커
+# ----------------------------------------------------------------------
+_STOP_EVT: mp.Event | None = None  # 각 워커에서 참조할 전역 이벤트
 
-def init_worker(ev):
+def init_worker(ev: mp.Event) -> None:
+    """워커 프로세스 초기화 시 전역 이벤트 주입"""
     global _STOP_EVT
-    _STOP_EVT = ev                    # Event proxy → 로컬 변수에 저장
+    _STOP_EVT = ev
 
-def exp_worker(offset):
+def exp_worker(offset: int) -> int:
+    """워커 프로세스 본체 – 지정 시간 동안 반복 횟수 계산"""
     start_val = offset * 10_000_000 + 1
     iterations = 0
     t0 = time.perf_counter()
-
-    while (time.perf_counter() - t0) < DURATION:
-        # 중단 요청 주기적 확인
+    while (time.perf_counter() - t0) < DURATION_SEC:
         if iterations % CHECK_EVERY == 0 and _STOP_EVT.is_set():
             break
-        exp_inverse_sum(start_val, start_val + BATCH)
+        exp_inverse_sum(start_val, start_val + BATCH_SIZE)
         iterations += 1
-        start_val  += BATCH
+        start_val += BATCH_SIZE
     return iterations
 
+# ----------------------------------------------------------------------
+# 싱글 / 멀티 코어 실행 래퍼
+# ----------------------------------------------------------------------
 def run_single_core(stop_event: threading.Event) -> int:
-    start_time = time.time()
-    iterations = 0
-    start = 1
-    while time.time() - start_time < DURATION:
+    """메인 프로세스(싱글 코어)로 벤치마크 실행"""
+    start_val, iterations = 1, 0
+    t0 = time.perf_counter()
+    while time.perf_counter() - t0 < DURATION_SEC:
         if stop_event.is_set():
             break
-        exp_inverse_sum(start, start + BATCH)
+        exp_inverse_sum(start_val, start_val + BATCH_SIZE)
         iterations += 1
-        start += BATCH
+        start_val += BATCH_SIZE
     return iterations
 
 def run_multi_core(stop_event: threading.Event) -> int:
+    """논리 코어 수만큼 프로세스 생성 후 병렬 벤치마크 실행"""
     cores = mp.cpu_count()
-    ctx   = mp.get_context("spawn")      # Windows 호환
-
-    stop_evt = ctx.Event()               # picklable!
-
-    # GUI 스레드 → stop_event → stop_evt 로 전달
+    ctx = mp.get_context("spawn")           # Windows 호환
+    stop_evt = ctx.Event()                  # 피클링 가능 Event
     threading.Thread(target=lambda: (stop_event.wait(), stop_evt.set()),
                      daemon=True).start()
 
@@ -62,103 +100,237 @@ def run_multi_core(stop_event: threading.Event) -> int:
                              mp_context=ctx,
                              initializer=init_worker,
                              initargs=(stop_evt,)) as exe:
-        futures = [exe.submit(exp_worker, i) for i in range(cores)]
-        return sum(f.result() for f in futures)
+        return sum(f.result() for f in
+                   [exe.submit(exp_worker, i) for i in range(cores)])
 
+# ----------------------------------------------------------------------
+# CPU / RAM 정보 헬퍼
+# ----------------------------------------------------------------------
+def _cpu_name_from_registry() -> str | None:
+    """레지스트리에서 ProcessorNameString 읽기(백업용)"""
+    try:
+        import winreg
+        with winreg.OpenKey(
+            winreg.HKEY_LOCAL_MACHINE,
+            r"HARDWARE\DESCRIPTION\System\CentralProcessor\0"
+        ) as k:
+            return winreg.QueryValueEx(k, "ProcessorNameString")[0].strip()
+    except Exception:
+        return None
 
-# -------- GUI --------
+def get_cpu_info() -> str:
+    """'CPU 이름  |  xC / yT' 형식 문자열 반환"""
+    name, physical, logical = None, "?", "?"
+    if sys.platform.startswith("win") and wmi:
+        try:
+            cpu = wmi.WMI().Win32_Processor()[0]
+            name = cpu.Name.strip()
+            logical = cpu.NumberOfLogicalProcessors
+            physical = cpu.NumberOfCores
+        except Exception:
+            pass
+    if not name and sys.platform.startswith("win"):
+        name = _cpu_name_from_registry()
+    if not name:
+        name = platform.processor() or platform.uname().processor or "Unknown CPU"
+    if logical == "?":
+        logical = os.cpu_count() or "?"
+    return f"{name}  |  {physical}C / {logical}T"
+
+def get_ram_info() -> str:
+    """RAM 슬롯별 BankLabel / PartNumber / 용량 / 설정 클럭 문자열 반환"""
+    if not (wmi and sys.platform.startswith("win")):
+        return ""
+    try:
+        modules = wmi.WMI().Win32_PhysicalMemory()
+    except Exception:
+        return ""
+    lines: list[str] = []
+    for mem in modules:
+        bank = mem.BankLabel or mem.DeviceLocator or "Unknown"
+        part = (mem.PartNumber or "").strip() or "N/A"
+        cap_gb = int(mem.Capacity) / (1024 ** 3)
+        speed = mem.ConfiguredClockSpeed or mem.Speed or 0
+        lines.append(f"{bank}  |  {part}  |  {int(cap_gb)} GB  |  {speed} MT/s")
+    return "\n".join(lines)
+
+# ----------------------------------------------------------------------
+# Tkinter GUI
+# ----------------------------------------------------------------------
 class BenchmarkGUI(tk.Tk):
+    """CPU / RAM 정보 + 벤치마크 실행 GUI"""
+
+    # ------------------------- 초기화 -------------------------
     def __init__(self) -> None:
         super().__init__()
         self.title("Python CPU Benchmark")
-        self.geometry("400x230")
         self.resizable(False, False)
 
-        ttk.Label(self, text=f"Select mode (runs {int(DURATION)} s):",
-                  font=("Segoe UI", 12)).pack(pady=12)
+        # ── 루트 프레임(20px 패딩) ────────────────────────────
+        root = ttk.Frame(self, padding=20)
+        root.pack(fill="both", expand=True)
 
-        # 버튼 영역
-        btn_frame = ttk.Frame(self)
-        btn_frame.pack()
-        self.single_btn = ttk.Button(btn_frame, text="Single‑core",
+        # 폰트 설정
+        f_title  = ("Arial", 14, "bold")
+        f_status = ("Arial", 12, "bold")
+        f_cpu    = ("Arial", 12)
+        f_ram    = ("Arial", 10)
+        f_result = ("Arial", 12)
+
+        # ── 제목 ------------------------------------------------
+        ttk.Label(root, text=f"Select Test (runs {int(DURATION_SEC)} s)",
+                  font=f_title).pack(pady=(0, 12))
+
+        # ── 실행 / 중단 버튼 -----------------------------------
+        btn_f = ttk.Frame(root); btn_f.pack()
+        self.single_btn = ttk.Button(btn_f, text="Single-core",
                                      command=self.start_single)
-        self.multi_btn  = ttk.Button(btn_frame, text="Multi‑core",
+        self.multi_btn  = ttk.Button(btn_f, text="Multi-core",
                                      command=self.start_multi)
-        self.stop_btn   = ttk.Button(btn_frame, text="Stop",
-                                     command=self.stop_benchmark, state=tk.DISABLED)
-        self.single_btn.grid(row=0, column=0, padx=6)
-        self.multi_btn.grid(row=0, column=1, padx=6)
-        self.stop_btn.grid(row=0, column=2, padx=6)
+        self.stop_btn   = ttk.Button(btn_f, text="Stop",
+                                     command=self.stop_benchmark,
+                                     state=tk.DISABLED)
+        self.single_btn.grid(row=0, column=0, padx=8)
+        self.multi_btn.grid(row=0, column=1, padx=8)
+        self.stop_btn.grid(row=0, column=2, padx=8)
 
-        # 진행률 / 경과 시간
-        self.progress = ttk.Progressbar(self, mode="determinate",
-                                        length=300, maximum=DURATION)
-        self.progress.pack(pady=10)
-        self.time_var = tk.StringVar(value="Elapsed: 0.0 s")
-        ttk.Label(self, textvariable=self.time_var).pack()
+        # ── 진행률 바 + 상태 -----------------------------------
+        self.progress = ttk.Progressbar(root, mode="determinate",
+                                        length=380, maximum=DURATION_SEC)
+        self.progress.pack(pady=(14, 6))
+        self.status_var = tk.StringVar(value="Ready")
+        ttk.Label(root, textvariable=self.status_var,
+                  font=f_status).pack()
 
-        # 결과
-        self.result_var = tk.StringVar(value="Ready")
-        ttk.Label(self, textvariable=self.result_var,
-                  font=("Consolas", 11)).pack(pady=10)
+        # ── CPU 정보 ------------------------------------------
+        ttk.Label(root, text=get_cpu_info(), font=f_cpu).pack(pady=(6, 8))
+
+        # ── RAM 정보 ------------------------------------------
+        ram_text = get_ram_info()
+        if ram_text:
+            ttk.Label(root, text=ram_text, font=f_ram
+                     ).pack(padx=4, pady=(0, 8))
+
+        # ── 최근 결과(2행 × 3열 그리드) ------------------------
+        ttk.Label(root, text="Results:", font=f_title
+                 ).pack(anchor="w", padx=4)
+
+        res_f = ttk.Frame(root)
+        res_f.pack(fill="x", padx=16)
+
+        # 결과 변수
+        self.last_single_iter = tk.StringVar(value="-")
+        self.last_single_ips  = tk.StringVar(value="-")
+        self.last_multi_iter  = tk.StringVar(value="-")
+        self.last_multi_ips   = tk.StringVar(value="-")
+
+        # 행 0 : Single
+        ttk.Label(res_f, text="Single-core", font=f_result,
+                  anchor="w", width=10
+                 ).grid(row=0, column=0, sticky="w")
+        ttk.Label(res_f, textvariable=self.last_single_iter,
+                  font=f_result, anchor="e", width=12
+                 ).grid(row=0, column=1, sticky="e")
+        ttk.Label(res_f, textvariable=self.last_single_ips,
+                  font=f_result, anchor="e", width=10
+                 ).grid(row=0, column=2, sticky="e")
+
+        # 행 1 : Multi
+        ttk.Label(res_f, text="Multi-core", font=f_result,
+                  anchor="w", width=10
+                 ).grid(row=1, column=0, sticky="w")
+        ttk.Label(res_f, textvariable=self.last_multi_iter,
+                  font=f_result, anchor="e", width=12
+                 ).grid(row=1, column=1, sticky="e")
+        ttk.Label(res_f, textvariable=self.last_multi_ips,
+                  font=f_result, anchor="e", width=10
+                 ).grid(row=1, column=2, sticky="e")
+
+        # 두 번째·세 번째 열을 우측 정렬(남는 공간 확보)
+        res_f.columnconfigure(1, weight=1)
+        res_f.columnconfigure(2, weight=1)
+
+        # ── 푸터 ------------------------------------------------
+        ttk.Label(self, text="Created by chili-tuna",
+                  font=("Arial", 9)
+                 ).pack(side="bottom", anchor="e", padx=10, pady=10)
 
         # 내부 상태
         self._worker_thread: threading.Thread | None = None
-        self._stop_event   = threading.Event()
+        self._stop_event = threading.Event()
 
-    # --- 벤치마크 시작/중단 ---
-    def start_single(self): self._run_benchmark("single")
-    def start_multi(self):  self._run_benchmark("multi")
+        # 창 중앙 배치
+        self.update_idletasks()
+        self._center_window()
 
-    def stop_benchmark(self):
+    # ------------------ 버튼 콜백 ------------------
+    def start_single(self) -> None: self._run_benchmark("Single")
+    def start_multi(self) -> None:  self._run_benchmark("Multi")
+
+    def stop_benchmark(self) -> None:
         if self._worker_thread and self._worker_thread.is_alive():
-            self._stop_event.set()   # 워커에게 중단 신호
-            self.result_var.set("Stopping...")
+            self._stop_event.set()
+            self.status_var.set("Stopping...")
 
-    def _run_benchmark(self, mode: str):
-        # UI 상태 전환
+    # --------------- 벤치마크 실행 -----------------
+    def _run_benchmark(self, mode: str) -> None:
         for b in (self.single_btn, self.multi_btn):
             b["state"] = tk.DISABLED
         self.stop_btn["state"] = tk.NORMAL
-        self.result_var.set("Running...")
+        self.status_var.set("Running...: 0.0 s")
         self.progress["value"] = 0
         self._stop_event.clear()
 
-        start_time = time.time()
+        start_time = time.perf_counter()
 
-        def task():
-            if mode == "single":
-                iterations = run_single_core(self._stop_event)
-            else:
-                iterations = run_multi_core(self._stop_event)
+        # 실제 연산 스레드 --------------------------------------
+        def task() -> None:
+            iterations = (run_single_core(self._stop_event)
+                          if mode == "Single" else
+                          run_multi_core(self._stop_event))
+            elapsed = time.perf_counter() - start_time
+            if not self._stop_event.is_set():
+                ips = iterations / elapsed if elapsed else 0
+                if mode == "Single":
+                    self.last_single_iter.set(f"{iterations:,} iters")
+                    self.last_single_ips.set(f"{ips:,.0f} it/s")
+                else:
+                    self.last_multi_iter.set(f"{iterations:,} iters")
+                    self.last_multi_ips.set(f"{ips:,.0f} it/s")
+            self.after(0, self._finish_benchmark)
 
-            elapsed = time.time() - start_time
-            ips = iterations / elapsed if elapsed else 0
-            # 간소화된 점수(총 iteration) + it/s
-            score = f"{iterations:,} iter   |   {ips:,.0f} it/s"
-            self.after(0, self._finish_benchmark, score)
-
-        # 진행률/시간 업데이트 타이머
-        def updater():
+        # 진행률 / 경과 시간 업데이트 ---------------------------
+        def updater() -> None:
             if self._worker_thread and self._worker_thread.is_alive():
-                elapsed = time.time() - start_time
-                self.progress["value"] = min(elapsed, DURATION)
-                self.time_var.set(f"Elapsed: {elapsed:4.1f} s")
-                self.after(100, updater)  # 0.1 s 간격
-        self.after(100, updater)
+                elapsed = time.perf_counter() - start_time
+                self.progress["value"] = min(elapsed, DURATION_SEC)
+                self.status_var.set(f"Running...: {elapsed:4.1f} s")
+                self.after(100, updater)
 
+        self.after(100, updater)
         self._worker_thread = threading.Thread(target=task, daemon=True)
         self._worker_thread.start()
 
-    def _finish_benchmark(self, score: str):
+    # --------------- 벤치마크 종료 -----------------
+    def _finish_benchmark(self) -> None:
         self.progress["value"] = 0
-        self.time_var.set("Elapsed: 0.0 s")
-        self.result_var.set(score)
+        self.status_var.set("Finished!" if not self._stop_event.is_set()
+                            else "Cancelled")
         self.stop_btn["state"] = tk.DISABLED
         for b in (self.single_btn, self.multi_btn):
             b["state"] = tk.NORMAL
 
-# -------- 메인 --------
+    # --------------- 창 중앙 정렬 -----------------
+    def _center_window(self) -> None:
+        """현재 창을 화면 중앙에 배치"""
+        w, h = self.winfo_width(), self.winfo_height()
+        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+        x, y = (sw - w) // 2, (sh - h) // 2
+        self.geometry(f"{w}x{h}+{x}+{y}")
+
+# ----------------------------------------------------------------------
+# 메인
+# ----------------------------------------------------------------------
 if __name__ == "__main__":
-    mp.freeze_support()
+    mp.freeze_support()            # PyInstaller 윈도우즈 호환
     BenchmarkGUI().mainloop()
