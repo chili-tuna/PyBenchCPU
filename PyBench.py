@@ -1,5 +1,5 @@
 """
-cpu_benchmark_gui.py
+PyBench.py
 ------------------------------------------------------------
 10 초 exp_inverse_sum CPU 벤치마크
 - 싱글 / 멀티 코어 선택
@@ -10,7 +10,7 @@ cpu_benchmark_gui.py
 - WMI 로 RAM 슬롯별 BankLabel / PartNumber / 용량 / 설정 클럭 표시
 - 우측 하단 “Created by” 푸터
 PyInstaller 패키징 예시
-    pyinstaller --onefile --noconsole cpu_benchmark_gui.py
+    pyinstaller --onefile --noconsole PyBench.py
 (Windows / Python 3.10.11 기준)
 """
 
