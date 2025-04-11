@@ -19,6 +19,7 @@ PyInstaller 패키징 예시
 # ----------------------------------------------------------------------
 from __future__ import annotations
 
+import concurrent
 import math
 import multiprocessing as mp
 import os
@@ -39,9 +40,12 @@ except ImportError:
 # ----------------------------------------------------------------------
 # 설정 상수
 # ----------------------------------------------------------------------
-DURATION_SEC: float = 10.0        # 벤치마크 실행 시간
-BATCH_SIZE: int = 100_000         # exp_inverse_sum 한 번에 계산할 개수
-CHECK_EVERY: int = 100            # stop 이벤트 확인 주기
+DURATION_SEC: float = 10.0  # 벤치마크 실행 시간
+BATCH_SIZE: int = 100_000  # exp_inverse_sum 한 번에 계산할 개수
+
+# ------------------ 공통 이벤트 생성 ------------------
+ctx = mp.get_context("spawn")
+GLOBAL_EVT = ctx.Event()  # GUI·워커 모두 동일 객체 사용
 
 # ----------------------------------------------------------------------
 # 벤치마크 계산 함수
@@ -63,14 +67,15 @@ def init_worker(ev: mp.Event) -> None:
 def exp_worker(offset: int) -> int:
     """워커 프로세스 본체 – 지정 시간 동안 반복 횟수 계산"""
     start_val = offset * 10_000_000 + 1
-    iterations = 0
-    t0 = time.perf_counter()
+    iterations, t0 = 0, time.perf_counter()
     while (time.perf_counter() - t0) < DURATION_SEC:
-        if iterations % CHECK_EVERY == 0 and _STOP_EVT.is_set():
+        block_end = time.perf_counter() + 0.001
+        while time.perf_counter() < block_end:
+            exp_inverse_sum(start_val, start_val + BATCH_SIZE)
+            iterations += 1
+            start_val += BATCH_SIZE
+        if _STOP_EVT.is_set():
             break
-        exp_inverse_sum(start_val, start_val + BATCH_SIZE)
-        iterations += 1
-        start_val += BATCH_SIZE
     return iterations
 
 # ----------------------------------------------------------------------
@@ -91,17 +96,26 @@ def run_single_core(stop_event: threading.Event) -> int:
 def run_multi_core(stop_event: threading.Event) -> int:
     """논리 코어 수만큼 프로세스 생성 후 병렬 벤치마크 실행"""
     cores = mp.cpu_count()
-    ctx = mp.get_context("spawn")           # Windows 호환
-    stop_evt = ctx.Event()                  # 피클링 가능 Event
-    threading.Thread(target=lambda: (stop_event.wait(), stop_evt.set()),
-                     daemon=True).start()
-
     with ProcessPoolExecutor(max_workers=cores,
                              mp_context=ctx,
                              initializer=init_worker,
-                             initargs=(stop_evt,)) as exe:
-        return sum(f.result() for f in
-                   [exe.submit(exp_worker, i) for i in range(cores)])
+                             initargs=(GLOBAL_EVT,)) as exe:
+        futures = [exe.submit(exp_worker, i) for i in range(cores)]
+        total = 0
+        try:
+            for f in concurrent.futures.as_completed(futures):  # timeout 제거
+                if stop_event.is_set():
+                    GLOBAL_EVT.set()
+                if GLOBAL_EVT.is_set():
+                    break
+                total += f.result()
+        finally:
+            # Stop이 눌린 경우 미완료 Future 취소
+            if GLOBAL_EVT.is_set():
+                for fu in futures:
+                    fu.cancel()
+        return total
+
 
 # ----------------------------------------------------------------------
 # CPU / RAM 정보 헬퍼
@@ -270,6 +284,7 @@ class BenchmarkGUI(tk.Tk):
     def stop_benchmark(self) -> None:
         if self._worker_thread and self._worker_thread.is_alive():
             self._stop_event.set()
+            GLOBAL_EVT.set()
             self.status_var.set("Stopping...")
 
     # --------------- 벤치마크 실행 -----------------
@@ -280,6 +295,7 @@ class BenchmarkGUI(tk.Tk):
         self.status_var.set("Running...: 0.0 s")
         self.progress["value"] = 0
         self._stop_event.clear()
+        GLOBAL_EVT.clear()
 
         start_time = time.perf_counter()
 
@@ -319,6 +335,7 @@ class BenchmarkGUI(tk.Tk):
         self.stop_btn["state"] = tk.DISABLED
         for b in (self.single_btn, self.multi_btn):
             b["state"] = tk.NORMAL
+        GLOBAL_EVT.clear()
 
     # --------------- 창 중앙 정렬 -----------------
     def _center_window(self) -> None:
