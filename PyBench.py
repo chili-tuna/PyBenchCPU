@@ -27,8 +27,8 @@ import platform
 import sys
 import threading
 import time
-from concurrent.futures import ProcessPoolExecutor
 import tkinter as tk
+from concurrent.futures import ProcessPoolExecutor
 from tkinter import ttk
 
 # WMI (Windows 전용) ----------------------------------------------------
@@ -38,14 +38,24 @@ except ImportError:
     wmi = None
 
 # ----------------------------------------------------------------------
+# 버전 정보
+# ----------------------------------------------------------------------
+__version__ = "1.0.1"
+
+# ----------------------------------------------------------------------
 # 설정 상수
 # ----------------------------------------------------------------------
 DURATION_SEC: float = 10.0  # 벤치마크 실행 시간
 BATCH_SIZE: int = 100_000  # exp_inverse_sum 한 번에 계산할 개수
 
-# ------------------ 공통 이벤트 생성 ------------------
+# ----------------------------------------------------------------------
+# 멀티프로세싱 컨텍스트 / Event 헬퍼
+# ----------------------------------------------------------------------
 ctx = mp.get_context("spawn")
-GLOBAL_EVT = ctx.Event()  # GUI·워커 모두 동일 객체 사용
+
+def new_event() -> mp.Event:
+    """벤치마크 1회 실행용 Event 객체 생성"""
+    return ctx.Event()
 
 # ----------------------------------------------------------------------
 # 벤치마크 계산 함수
@@ -69,12 +79,12 @@ def exp_worker(offset: int) -> int:
     start_val = offset * 10_000_000 + 1
     iterations, t0 = 0, time.perf_counter()
     while (time.perf_counter() - t0) < DURATION_SEC:
-        block_end = time.perf_counter() + 0.001
+        block_end = time.perf_counter() + 0.001  # 1 ms 블록
         while time.perf_counter() < block_end:
             exp_inverse_sum(start_val, start_val + BATCH_SIZE)
             iterations += 1
             start_val += BATCH_SIZE
-        if _STOP_EVT.is_set():
+        if _STOP_EVT and _STOP_EVT.is_set():
             break
     return iterations
 
@@ -93,29 +103,26 @@ def run_single_core(stop_event: threading.Event) -> int:
         start_val += BATCH_SIZE
     return iterations
 
-def run_multi_core(stop_event: threading.Event) -> int:
+def run_multi_core(stop_event: threading.Event, stop_evt_mp: mp.Event) -> int:
     """논리 코어 수만큼 프로세스 생성 후 병렬 벤치마크 실행"""
     cores = mp.cpu_count()
     with ProcessPoolExecutor(max_workers=cores,
                              mp_context=ctx,
                              initializer=init_worker,
-                             initargs=(GLOBAL_EVT,)) as exe:
+                             initargs=(stop_evt_mp,)) as exe:
         futures = [exe.submit(exp_worker, i) for i in range(cores)]
         total = 0
         try:
-            for f in concurrent.futures.as_completed(futures):  # timeout 제거
+            for f in concurrent.futures.as_completed(futures):
                 if stop_event.is_set():
-                    GLOBAL_EVT.set()
-                if GLOBAL_EVT.is_set():
+                    stop_evt_mp.set()  # GUI → 워커 브로드캐스트
+                if stop_evt_mp.is_set():
                     break
                 total += f.result()
         finally:
-            # Stop이 눌린 경우 미완료 Future 취소
-            if GLOBAL_EVT.is_set():
-                for fu in futures:
-                    fu.cancel()
+            # Stop이 눌린 경우 미완료 Future 취소 및 풀 즉시 종료
+            exe.shutdown(wait=False, cancel_futures=True)
         return total
-
 
 # ----------------------------------------------------------------------
 # CPU / RAM 정보 헬퍼
@@ -192,29 +199,23 @@ class BenchmarkGUI(tk.Tk):
         f_result = ("Arial", 12)
 
         # ── 제목 ------------------------------------------------
-        ttk.Label(root, text=f"Select Test (runs {int(DURATION_SEC)} s)",
-                  font=f_title).pack(pady=(0, 12))
+        ttk.Label(root, text=f"Select Test (runs {int(DURATION_SEC)} s)", font=f_title).pack(pady=(0, 12))
 
         # ── 실행 / 중단 버튼 -----------------------------------
-        btn_f = ttk.Frame(root); btn_f.pack()
-        self.single_btn = ttk.Button(btn_f, text="Single-core",
-                                     command=self.start_single)
-        self.multi_btn  = ttk.Button(btn_f, text="Multi-core",
-                                     command=self.start_multi)
-        self.stop_btn   = ttk.Button(btn_f, text="Stop",
-                                     command=self.stop_benchmark,
-                                     state=tk.DISABLED)
+        btn_f = ttk.Frame(root)
+        btn_f.pack()
+        self.single_btn = ttk.Button(btn_f, text="Single-core", command=self.start_single)
+        self.multi_btn = ttk.Button(btn_f, text="Multi-core", command=self.start_multi)
+        self.stop_btn = ttk.Button(btn_f, text="Stop", command=self.stop_benchmark, state=tk.DISABLED)
         self.single_btn.grid(row=0, column=0, padx=8)
         self.multi_btn.grid(row=0, column=1, padx=8)
         self.stop_btn.grid(row=0, column=2, padx=8)
 
         # ── 진행률 바 + 상태 -----------------------------------
-        self.progress = ttk.Progressbar(root, mode="determinate",
-                                        length=380, maximum=DURATION_SEC)
+        self.progress = ttk.Progressbar(root, mode="determinate", length=380, maximum=DURATION_SEC)
         self.progress.pack(pady=(14, 6))
         self.status_var = tk.StringVar(value="Ready")
-        ttk.Label(root, textvariable=self.status_var,
-                  font=f_status).pack()
+        ttk.Label(root, textvariable=self.status_var, font=f_status).pack()
 
         # ── CPU 정보 ------------------------------------------
         ttk.Label(root, text=get_cpu_info(), font=f_cpu).pack(pady=(6, 8))
@@ -222,23 +223,18 @@ class BenchmarkGUI(tk.Tk):
         # ── RAM 정보 ------------------------------------------
         ram_text = get_ram_info()
         if ram_text:
-            ttk.Label(root, text=ram_text, font=f_ram
-                     ).pack(padx=4, pady=(0, 8))
+            ttk.Label(root, text=ram_text, font=f_ram).pack(padx=4, pady=(0, 8))
 
-        # ── 최근 결과(2행 × 3열 그리드) ------------------------
-        ttk.Label(root, text="Results:", font=f_title
-                 ).pack(anchor="w", padx=4)
-
+        # ── 테스트 결과(2행 × 3열) -----------------------------
+        ttk.Label(root, text="Results:", font=f_title).pack(anchor="w", padx=4)
         res_f = ttk.Frame(root)
         res_f.pack(fill="x", padx=16)
 
-        # 결과 변수
         self.last_single_iter = tk.StringVar(value="-")
         self.last_single_ips  = tk.StringVar(value="-")
         self.last_multi_iter  = tk.StringVar(value="-")
         self.last_multi_ips   = tk.StringVar(value="-")
 
-        # 행 0 : Single
         ttk.Label(res_f, text="Single-core", font=f_result,
                   anchor="w", width=10
                  ).grid(row=0, column=0, sticky="w")
@@ -249,29 +245,20 @@ class BenchmarkGUI(tk.Tk):
                   font=f_result, anchor="e", width=10
                  ).grid(row=0, column=2, sticky="e")
 
-        # 행 1 : Multi
-        ttk.Label(res_f, text="Multi-core", font=f_result,
-                  anchor="w", width=10
-                 ).grid(row=1, column=0, sticky="w")
-        ttk.Label(res_f, textvariable=self.last_multi_iter,
-                  font=f_result, anchor="e", width=12
-                 ).grid(row=1, column=1, sticky="e")
-        ttk.Label(res_f, textvariable=self.last_multi_ips,
-                  font=f_result, anchor="e", width=10
-                 ).grid(row=1, column=2, sticky="e")
+        ttk.Label(res_f, text="Multi-core", font=f_result, anchor="w", width=10).grid(row=1, column=0, sticky="w")
+        ttk.Label(res_f, textvariable=self.last_multi_iter, font=f_result, anchor="e", width=12).grid(row=1, column=1, sticky="e")
+        ttk.Label(res_f, textvariable=self.last_multi_ips, font=f_result, anchor="e", width=10).grid(row=1, column=2, sticky="e")
 
-        # 두 번째·세 번째 열을 우측 정렬(남는 공간 확보)
         res_f.columnconfigure(1, weight=1)
         res_f.columnconfigure(2, weight=1)
 
         # ── 푸터 ------------------------------------------------
-        ttk.Label(self, text="Created by chili-tuna",
-                  font=("Arial", 9)
-                 ).pack(side="bottom", anchor="e", padx=10, pady=10)
+        ttk.Label(self, text=f"PyBench v{__version__}  |  Created by chili‑tuna", font=("Arial", 9)).pack(side="bottom", anchor="e", padx=10, pady=10)
 
         # 내부 상태
         self._worker_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
+        self._stop_evt_mp: mp.Event | None = None
 
         # 창 중앙 배치
         self.update_idletasks()
@@ -284,8 +271,9 @@ class BenchmarkGUI(tk.Tk):
     def stop_benchmark(self) -> None:
         if self._worker_thread and self._worker_thread.is_alive():
             self._stop_event.set()
-            GLOBAL_EVT.set()
-            self.status_var.set("Stopping...")
+            if self._stop_evt_mp:
+                self._stop_evt_mp.set()
+            self.status_var.set("Stopping…")
 
     # --------------- 벤치마크 실행 -----------------
     def _run_benchmark(self, mode: str) -> None:
@@ -295,15 +283,16 @@ class BenchmarkGUI(tk.Tk):
         self.status_var.set("Running...: 0.0 s")
         self.progress["value"] = 0
         self._stop_event.clear()
-        GLOBAL_EVT.clear()
+        self._stop_evt_mp = new_event()
 
         start_time = time.perf_counter()
 
         # 실제 연산 스레드 --------------------------------------
         def task() -> None:
-            iterations = (run_single_core(self._stop_event)
-                          if mode == "Single" else
-                          run_multi_core(self._stop_event))
+            if mode == "Single":
+                iterations = run_single_core(self._stop_event)
+            else:
+                iterations = run_multi_core(self._stop_event, self._stop_evt_mp)
             elapsed = time.perf_counter() - start_time
             if not self._stop_event.is_set():
                 ips = iterations / elapsed if elapsed else 0
@@ -329,13 +318,13 @@ class BenchmarkGUI(tk.Tk):
 
     # --------------- 벤치마크 종료 -----------------
     def _finish_benchmark(self) -> None:
+        if self._worker_thread:
+            self._worker_thread.join()  # 워커 완전 종료 보장
         self.progress["value"] = 0
-        self.status_var.set("Finished!" if not self._stop_event.is_set()
-                            else "Cancelled")
+        self.status_var.set("Finished!" if not self._stop_event.is_set() else "Cancelled")
         self.stop_btn["state"] = tk.DISABLED
         for b in (self.single_btn, self.multi_btn):
             b["state"] = tk.NORMAL
-        GLOBAL_EVT.clear()
 
     # --------------- 창 중앙 정렬 -----------------
     def _center_window(self) -> None:
