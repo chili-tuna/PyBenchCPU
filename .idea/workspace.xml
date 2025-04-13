@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="a3cec54a-a67f-4610-815e-587b165dfef1" name="변경" comment="Add .gitignore and initial activation scripts for environment setup" />
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_BRANCH_BY_REPOSITORY">
+      <map>
+        <entry key="$PROJECT_DIR$" value="dev" />
+      </map>
+    </option>
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;chili-tuna&quot;
+  }
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/chili-tuna/PyBench.git&quot;,
+    &quot;accountId&quot;: &quot;794d6879-daa8-4d32-acb5-824064d3e12c&quot;
+  },
+  &quot;recentNewPullRequestHead&quot;: {
+    &quot;server&quot;: {
+      &quot;useHttp&quot;: false,
+      &quot;host&quot;: &quot;github.com&quot;,
+      &quot;port&quot;: null,
+      &quot;suffix&quot;: null
+    },
+    &quot;owner&quot;: &quot;chili-tuna&quot;,
+    &quot;repository&quot;: &quot;PyBench&quot;
+  }
+}</component>
+  <component name="ProblemsViewState">
+    <option name="selectedTabId" value="CurrentFile" />
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 8
+}</component>
+  <component name="ProjectId" id="2vZYLZrGxDahxyQp4glRSqzRh5v" />
+  <component name="ProjectLevelVcsManager" settingsEditedManually="true" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ASKED_MARK_IGNORED_FILES_AS_EXCLUDED": "true",
+    "Python.PyBench.executor": "Run",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "SHARE_PROJECT_CONFIGURATION_FILES": "true",
+    "git-widget-placeholder": "master",
+    "ignore.virus.scanning.warn.message": "true",
+    "last_opened_file_path": "C:/Users/user/PycharmProjects/PyBench",
+    "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable"
+  }
+}]]></component>
+  <component name="RecentsManager">
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="C:\Users\user\PycharmProjects\PyBench" />
+    </key>
+  </component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-python-sdk-4f4e415b4190-aa17d162503b-com.jetbrains.pycharm.community.sharedIndexes.bundled-PC-243.26053.29" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="애플리케이션 수준" UseSingleDictionary="true" transferred="true" />
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="디폴트 작업">
+      <changelist id="a3cec54a-a67f-4610-815e-587b165dfef1" name="변경" comment="" />
+      <created>1744354007538</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1744354007538</updated>
+    </task>
+    <task id="LOCAL-00001" summary="Add CPU benchmark GUI with single-core and multi-core support">
+      <option name="closed" value="true" />
+      <created>1744358523142</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1744358523142</updated>
+    </task>
+    <task id="LOCAL-00002" summary="Enhance CPU benchmark GUI with Korean localization and improved features">
+      <option name="closed" value="true" />
+      <created>1744362160313</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1744362160313</updated>
+    </task>
+    <task id="LOCAL-00003" summary="Fix formatting issues in CPU benchmark GUI labels and documentation">
+      <option name="closed" value="true" />
+      <created>1744364376204</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1744364376204</updated>
+    </task>
+    <task id="LOCAL-00004" summary="Refactor CPU benchmark GUI for improved readability and functionality; add RAM info display">
+      <option name="closed" value="true" />
+      <created>1744376437698</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1744376437698</updated>
+    </task>
+    <task id="LOCAL-00005" summary="Rename cpu_benchmark_gui.py to PyBench.py in documentation and packaging instructions">
+      <option name="closed" value="true" />
+      <created>1744378311964</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1744378311964</updated>
+    </task>
+    <task id="LOCAL-00006" summary="Refactor multi-core benchmarking to use a global event for process synchronization and improve worker cancellation handling">
+      <option name="closed" value="true" />
+      <created>1744389388281</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1744389388281</updated>
+    </task>
+    <task id="LOCAL-00007" summary="Refactor multi-core benchmarking to improve event handling and worker synchronization; update version info and enhance GUI layout">
+      <option name="closed" value="true" />
+      <created>1744392722188</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1744392722188</updated>
+    </task>
+    <task id="LOCAL-00008" summary="Fix typo in footer label of PyBench GUI">
+      <option name="closed" value="true" />
+      <created>1744393308232</created>
+      <option name="number" value="00008" />
+      <option name="presentableId" value="LOCAL-00008" />
+      <option name="project" value="LOCAL" />
+      <updated>1744393308232</updated>
+    </task>
+    <task id="LOCAL-00009" summary="Add .gitignore and initial activation scripts for environment setup">
+      <option name="closed" value="true" />
+      <created>1744395893326</created>
+      <option name="number" value="00009" />
+      <option name="presentableId" value="LOCAL-00009" />
+      <option name="project" value="LOCAL" />
+      <updated>1744395893326</updated>
+    </task>
+    <option name="localTasksCounter" value="10" />
+    <servers />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="Add CPU benchmark GUI with single-core and multi-core support" />
+    <MESSAGE value="Enhance CPU benchmark GUI with Korean localization and improved features" />
+    <MESSAGE value="Fix formatting issues in CPU benchmark GUI labels and documentation" />
+    <MESSAGE value="Refactor CPU benchmark GUI for improved readability and functionality; add RAM info display" />
+    <MESSAGE value="Rename cpu_benchmark_gui.py to PyBench.py in documentation and packaging instructions" />
+    <MESSAGE value="Refactor multi-core benchmarking to use a global event for process synchronization and improve worker cancellation handling" />
+    <MESSAGE value="Refactor multi-core benchmarking to improve event handling and worker synchronization; update version info and enhance GUI layout" />
+    <MESSAGE value="Fix typo in footer label of PyBench GUI" />
+    <MESSAGE value="Add .gitignore and initial activation scripts for environment setup" />
+    <option name="LAST_COMMIT_MESSAGE" value="Add .gitignore and initial activation scripts for environment setup" />
+  </component>
+</project>
